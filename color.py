@@ -1,27 +1,46 @@
-from math import *
-from util import format_number
+"""RGBA color utilities.
+
+The :class:`ColorRGBA` class stores red, green, blue, and alpha channels
+as floating-point values. RGB arithmetic leaves alpha unchanged unless
+explicitly modified.
+"""
+
+from __future__ import annotations
+
+from numbers import Real
+from typing import Iterable, Iterator, Sequence, Self, overload
+
+from .util import format_number
 
 
-class ColorRGBA(object):
+class ColorRGBA:
+    """A mutable RGBA color represented by four floating-point channels."""
 
-    __slots__ = ('_c',)
+    __slots__ = ("_c",)
+    __match_args__ = ("r", "g", "b", "a")
 
+    def __init__(self, *args: Real | Iterable[Real]) -> None:
+        """Create a color.
 
-    def __init__(self, *args):
-
-        """Creates a color object."""
-
+        With no arguments, creates opaque black. Three arguments create an
+        opaque RGB color; four arguments create an RGBA color. A single
+        iterable containing three or four values is also accepted.
+        """
         if not args:
             self._c = [0.0, 0.0, 0.0, 1.0]
             return
 
         if len(args) == 1:
-            args = args[0]
+            value = args[0]
+            if isinstance(value, Real):
+                raise ValueError("0, 1, 3 or 4 values required")
+            args = tuple(value)
 
         if len(args) == 3:
             r, g, b = args
             self._c = [float(r), float(g), float(b), 1.0]
             return
+
         if len(args) == 4:
             r, g, b, a = args
             self._c = [float(r), float(g), float(b), float(a)]
@@ -29,428 +48,341 @@ class ColorRGBA(object):
 
         raise ValueError("0, 1, 3 or 4 values required")
 
-    def __str__(self):
-
+    def __str__(self) -> str:
         return "(" + ", ".join(format_number(c) for c in self._c) + ")"
-        #return "(" + ", ".join(map(str, self._c)) + ")"
 
-    def __repr__(self):
-
+    def __repr__(self) -> str:
         return "ColorRGBA(" + ", ".join(map(str, self._c)) + ")"
 
     @classmethod
-    def black(cls):
-
-        """Create a color object representing black."""
-
-        c = cls.__new__(cls, object)
-        c._c = [0.0, 0.0, 0.0, 1.0]
-        return c
+    def black(cls) -> Self:
+        """Create an opaque black color."""
+        return cls(0.0, 0.0, 0.0, 1.0)
 
     @classmethod
-    def white(cls):
-
-        """Create a color object representing white."""
-
-        c = cls.__new__(cls, object)
-        c._c = [1.0, 1.0, 1.0, 1.0]
-        return c
-
+    def white(cls) -> Self:
+        """Create an opaque white color."""
+        return cls(1.0, 1.0, 1.0, 1.0)
 
     @classmethod
-    def from_floats(cls, r, g, b, a=1.0):
-
-        """Creates a color object from float components.
-
-        r -- Red component
-        g -- Green component
-        b -- Blue component
-        a -- Alpha component
-
-        """
-
-        c = cls.__new__(cls, object)
-        c._c = [r, g, b, a]
-        return c
+    def from_floats(
+        cls, r: Real, g: Real, b: Real, a: Real = 1.0
+    ) -> Self:
+        """Create a color from floating-point-style components."""
+        return cls(float(r), float(g), float(b), float(a))
 
     @classmethod
-    def from_rgba8(cls, r, g, b, a=255.0):
-
-        """Creates a color object from 4 integer components in 0->255 range.
-
-        r -- Red component
-        g -- Green component
-        b -- Blue component
-        a -- Alpha component
-
-        """
-
-        c = cls.__new__(cls, object)
-        c._c = [r / 255.0, g / 255.0, b / 255.0, a / 255.0]
-        return c
-
+    def from_rgba8(
+        cls, r: Real, g: Real, b: Real, a: Real = 255
+    ) -> Self:
+        """Create a color from RGBA components in the 0..255 range."""
+        return cls(
+            float(r) / 255.0,
+            float(g) / 255.0,
+            float(b) / 255.0,
+            float(a) / 255.0,
+        )
 
     @classmethod
-    def from_html(cls, col_str, a=1.0):
-
-        """Creates a color object from an html style color string.
-
-        col_str -- The color string (eg. "#FF0000")
-
-        """
-
-        if len(col_str) != 7 or col_str[0] != '#':
-            raise ValueError("Requires a color encoded in a html style string")
-
-        c = cls.__new__(cls, object)
-
-        components = col_str[1:3], col_str[3:5], col_str[5:6]
+    def from_html(cls, col_str: str, a: Real = 1.0) -> Self:
+        """Create a color from a ``#RRGGBB`` HTML-style color string."""
+        if len(col_str) != 7 or col_str[0] != "#":
+            raise ValueError(
+                "Requires a color encoded in a HTML-style string"
+            )
 
         try:
-            c._c = [ int(s, 16) / 255.0 for s in components ] + [ a ]
-        except ValueError:
-            raise ValueError \
-                ("Components should be encoded as two hex characters")
+            components = (
+                int(col_str[1:3], 16),
+                int(col_str[3:5], 16),
+                int(col_str[5:7], 16),
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Components should be encoded as two hex characters"
+            ) from exc
 
+        return cls.from_rgba8(*components, a=float(a))
 
     @classmethod
-    def grey(self, level):
+    def grey(cls, level: Real) -> Self:
+        """Create a grey color from a level between 0 and 1."""
+        level = float(level)
+        return cls(level, level, level, 1.0)
 
-        """Creates a 'grey' color.
-
-        level -- Grey level (0 is black, 1. is 'full' white)
-
-        """
-
-        level = level * 1.0
-        c = cls.__new__(cls, object)
-        c._c = [level, level, level, 1.0]
-        return c
     gray = grey
 
     @classmethod
-    def from_palette(cls, color_name):
-
+    def from_palette(cls, color_name: str) -> Self:
+        """Create a color from a named palette entry."""
         try:
-            c = cls.__new__(cls, object)
             r, g, b = _palette[color_name]
-            c._c = [r, g, b, 1.0]
-            return c
-        except KeyError:
-            raise ValueError( "Unknown color name (%s)" % color_name )
+        except KeyError as exc:
+            raise ValueError(f"Unknown color name ({color_name})") from exc
+        return cls(r, g, b, 1.0)
 
+    def copy(self) -> Self:
+        """Return a copy of this color."""
+        return self.__class__(*self._c)
 
-    def copy(self):
-
-        """Returns a copy of the color object."""
-
-        c = self.__new__(self.__class__, object)
-        c._c = self._c[:]
-        return c
     __copy__ = copy
 
-    def _get_r(self):
+    @property
+    def r(self) -> float:
+        """Red component."""
         return self._c[0]
-    def _set_r(self, r):
-        try:
-            self._c[0] = 1.0 * r
-        except TypeError:
-            raise TypeError( "Must be a number" )
-    r = property(_get_r, _set_r, None, "Red component.")
 
-    def _get_g(self):
+    @r.setter
+    def r(self, value: Real) -> None:
+        self._c[0] = float(value)
+
+    @property
+    def g(self) -> float:
+        """Green component."""
         return self._c[1]
-    def _set_g(self, g):
-        try:
-            self._c[1] = 1.0 * g
-        except TypeError:
-            raise TypeError( "Must be a number" )
-    g = property(_get_g, _set_g, None, "Green component.")
 
-    def _get_b(self):
+    @g.setter
+    def g(self, value: Real) -> None:
+        self._c[1] = float(value)
+
+    @property
+    def b(self) -> float:
+        """Blue component."""
         return self._c[2]
-    def _set_b(self, b):
-        try:
-            self._c[2] = b
-        except TypeError:
-            raise TypeError( "Must be a number" )
-    b = property(_get_b, _set_b, None, "Blue component.")
 
-    def _get_a(self):
+    @b.setter
+    def b(self, value: Real) -> None:
+        self._c[2] = float(value)
+
+    @property
+    def a(self) -> float:
+        """Alpha component."""
         return self._c[3]
-    def _set_a(self, a):
-        try:
-            self._c[3] = a
-        except TypeError:
-            raise TypeError( "Must be a number" )
-    a = property(_get_a, _set_a, None, "Alpha component.")
 
-    def _get_rgba8(self):
-        r, g, b, a = self._c
-        r = min(max(r, 0.0), 1.0) * 255.0
-        g = min(max(g, 0.0), 1.0) * 255.0
-        b = min(max(b, 0.0), 1.0) * 255.0
-        a = min(max(a, 0.0), 1.0) * 255.0
-        return (int(r), int(g), int(b), int(a))
-    def _set_rgba8(self, rgba):
+    @a.setter
+    def a(self, value: Real) -> None:
+        self._c[3] = float(value)
+
+    @property
+    def rgba8(self) -> tuple[int, int, int, int]:
+        """Return RGBA channels as integers in the 0..255 range."""
+        return tuple(
+            int(min(max(channel, 0.0), 1.0) * 255.0)
+            for channel in self._c
+        )  # type: ignore[return-value]
+
+    @rgba8.setter
+    def rgba8(self, rgba: Sequence[Real]) -> None:
         r, g, b, a = rgba
-        c = self._c
-        c[0] = r / 255.0
-        c[1] = g / 255.0
-        c[2] = b / 255.0
-        c[3] = a / 255.0
-        return self
-    rgba8 = property(_get_rgba8, _set_rgba8, None, "RGBA integer 8 bit format")
+        self._c[:] = [
+            float(r) / 255.0,
+            float(g) / 255.0,
+            float(b) / 255.0,
+            float(a) / 255.0,
+        ]
 
-    def _get_rgb8(self):
-        r, g, b, a = self._c
-        r = min(max(r, 0.0), 1.0) * 255.0
-        g = min(max(g, 0.0), 1.0) * 255.0
-        b = min(max(b, 0.0), 1.0) * 255.0
-        return (int(r), int(g), int(b))
-    def _set_rgb8(self, rgb):
+    @property
+    def rgb8(self) -> tuple[int, int, int]:
+        """Return RGB channels as integers in the 0..255 range."""
+        return tuple(
+            int(min(max(channel, 0.0), 1.0) * 255.0)
+            for channel in self._c[:3]
+        )
+
+    @rgb8.setter
+    def rgb8(self, rgb: Sequence[Real]) -> None:
         r, g, b = rgb
-        c = self._c
-        c[0] = r / 255.0
-        c[1] = g / 255.0
-        c[2] = b / 255.0
-        c[3] = 1.0
-        return self
-    rgb8 = property(_get_rgb8, _set_rgb8, None, "RGB integer 8 bit format")
+        self._c[:] = [
+            float(r) / 255.0,
+            float(g) / 255.0,
+            float(b) / 255.0,
+            1.0,
+        ]
 
-
-    def __len__(self):
+    def __len__(self) -> int:
         return 4
 
-    def __iter__(self):
-        return iter(self._c[:])
+    def __iter__(self) -> Iterator[float]:
+        return iter(self._c)
 
-    def __getitem__(self, index):
+    @overload
+    def __getitem__(self, index: int) -> float: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[float]: ...
+
+    def __getitem__(self, index: int | slice) -> float | list[float]:
         try:
             return self._c[index]
-        except IndexError:
-            raise IndexError( "Index must be 0, 1, 2, or 3" )
+        except IndexError as exc:
+            raise IndexError("Index must be 0, 1, 2, or 3") from exc
 
-    def __setitem__(self, index, value):
-        assert isinstance(value, float), "Must be a float"
+    def __setitem__(self, index: int | slice, value: Real | Sequence[Real]) -> None:
+        if isinstance(index, slice):
+            values = [float(v) for v in value]  # type: ignore[arg-type]
+            self._c[index] = values
+            return
         try:
-            self._c[index] = 1.0 * value
-        except IndexError:
-            raise IndexError( "Index must be 0, 1, 2, or 3" )
-        except ValueError:
-            raise ValueError( "Must be a number" )
+            self._c[index] = float(value)  # type: ignore[arg-type]
+        except IndexError as exc:
+            raise IndexError("Index must be 0, 1, 2, or 3") from exc
+        except (TypeError, ValueError) as exc:
+            raise TypeError("Must be a number") from exc
 
-    def __eq__(self, rhs):
+    def __eq__(self, rhs: object) -> bool:
+        if isinstance(rhs, ColorRGBA):
+            return self._c == rhs._c
+        try:
+            return tuple(self._c) == tuple(rhs)  # type: ignore[arg-type]
+        except TypeError:
+            return NotImplemented
 
-        r, g, b, a = self._c
-        rr, gg, bb, aa = rhs
-        return r == rr and g == gg and b == bb and a == aa
+    def __ne__(self, rhs: object) -> bool:
+        result = self.__eq__(rhs)
+        if result is NotImplemented:
+            return NotImplemented
+        return not result
 
-    def __ne__(self, rhs):
+    # ColorRGBA is mutable, so it must not be hashable.
+    __hash__ = None
 
-        r, g, b, a = self._c
-        rr, gg, bb, aa = rhs
-        return r != rr or g != gg or b != bb or a != aa
-
-    def __hash__(self):
-
-        return hash(tuple(self._c))
-
-    def __add__(self, rhs):
-
+    def __add__(self, rhs: Sequence[Real]) -> Self:
         r, g, b, a = self._c
         rr, gg, bb = rhs[:3]
+        return self.from_floats(r + rr, g + gg, b + bb, a)
 
-        return self.from_floats(r+rr, g+gg, b+bb, a)
-
-    def __iadd__(self, rhs):
-
+    def __iadd__(self, rhs: Sequence[Real]) -> Self:
         r, g, b = rhs[:3]
-        c = self._c
-        c[0] += r
-        c[1] += g
-        c[2] += b
+        self._c[0] += r
+        self._c[1] += g
+        self._c[2] += b
         return self
 
-    def __radd__(self, lhs):
+    __radd__ = __add__
 
-        r, g, b, a = self._c
-        rr, gg, bb = lhs[:3]
-        return self.from_floats(rr + r, gg + g, bb + b, a)
-
-    def __sub__(self, rhs):
-
+    def __sub__(self, rhs: Sequence[Real]) -> Self:
         r, g, b, a = self._c
         rr, gg, bb = rhs[:3]
-
         return self.from_floats(r - rr, g - gg, b - bb, a)
 
-    def __isub__(self, rhs):
-
+    def __isub__(self, rhs: Sequence[Real]) -> Self:
         r, g, b = rhs[:3]
-        c = self._c
-        c[0] -= r
-        c[1] -= g
-        c[2] -= b
+        self._c[0] -= r
+        self._c[1] -= g
+        self._c[2] -= b
         return self
 
-    def __rsub__(self, lhs):
-
-        r, g, b = self._c
+    def __rsub__(self, lhs: Sequence[Real]) -> Self:
+        r, g, b, a = self._c
         rr, gg, bb = lhs[:3]
         return self.from_floats(rr - r, gg - g, bb - b, a)
 
-    def __mul__(self, rhs):
-
+    def __mul__(self, rhs: Real) -> Self:
         r, g, b, a = self._c
         return self.from_floats(r * rhs, g * rhs, b * rhs, a)
 
-    def __imul__(self, rhs):
-
-        c = self._c
-        c[0] *= rhs
-        c[1] *= rhs
-        c[2] *= rhs
+    def __imul__(self, rhs: Real) -> Self:
+        self._c[0] *= rhs
+        self._c[1] *= rhs
+        self._c[2] *= rhs
         return self
 
-    def __rmul__(self, lhs):
+    __rmul__ = __mul__
 
-        r, g, b, a = self._c
-        return self.from_floats(lhs * r, lhs * g, lhs * b, a)
-
-    def __div__(self, rhs):
-
+    def __truediv__(self, rhs: Real) -> Self:
         r, g, b, a = self._c
         return self.from_floats(r / rhs, g / rhs, b / rhs, a)
 
-    def __idiv__(self, rhs):
-
-        c = self._c
-        c[0] *= rhs
-        c[1] *= rhs
-        c[2] *= rhs
+    def __itruediv__(self, rhs: Real) -> Self:
+        self._c[0] /= rhs
+        self._c[1] /= rhs
+        self._c[2] /= rhs
         return self
 
-    def __rdiv__(self, lhs):
-
+    def __rtruediv__(self, lhs: Real) -> Self:
         r, g, b, a = self._c
         return self.from_floats(lhs / r, lhs / g, lhs / b, a)
 
-    def __neg__(self):
-
+    def __neg__(self) -> Self:
         r, g, b, a = self._c
         return self.from_floats(-r, -g, -b, a)
 
-    def __pos__(self):
-
+    def __pos__(self) -> Self:
         return self.copy()
 
-    def __nonzero__(self):
+    def __bool__(self) -> bool:
+        return any(self._c)
 
-        r, g, b, a = self._c
-        return bool(r or g or b or a)
-
-    def __call__(self, keys):
-
-        c = self._c
+    def __call__(self, keys: str) -> tuple[float, ...]:
         try:
-            return tuple(c["rgba".index(k)] for k in keys)
-        except ValueError:
-            raise IndexError("Keys must be one of r, g, b, a")
+            return tuple(self._c["rgba".index(key)] for key in keys)
+        except ValueError as exc:
+            raise IndexError("Keys must be one of r, g, b, a") from exc
 
+    def as_tuple(self) -> tuple[float, float, float, float]:
+        return tuple(self._c)  # type: ignore[return-value]
 
-    def as_tuple(self):
+    def as_tuple_rgb(self) -> tuple[float, float, float]:
+        return tuple(self._c[:3])  # type: ignore[return-value]
 
-        return tuple(self._c)
+    def as_tuple_rgba(self) -> tuple[float, float, float, float]:
+        return self.as_tuple()
 
-    def as_tuple_rgb(self):
-
-        return tuple(self._c[:3])
-
-    def as_tuple_rgba(self):
-
-        return tuple(self._c)
-
-
-    def __int__(self):
-
-        """Convert the color to a packed RGBA integer."""
-
+    def __int__(self) -> int:
+        """Convert the color to a packed 0xAARRGGBB integer."""
         r, g, b, a = self.rgba8
-        return (int(a) << 24) | (int(r) << 16) | (int(g) << 8) | int(b)
+        return (a << 24) | (r << 16) | (g << 8) | b
 
+    def as_html(self) -> str:
+        """Return the RGB channels as a ``#RRGGBB`` string."""
+        r, g, b = self.get_saturate().rgb8
+        return f"#{r:02X}{g:02X}{b:02X}"
 
-    def as_html(self):
+    def saturate(self) -> Self:
+        """Clamp all components to the range 0..1 in place."""
+        self._c[:] = [min(max(c, 0.0), 1.0) for c in self._c]
+        return self
 
-        """Returns the color encoded as an html style string."""
+    def get_saturate(self) -> Self:
+        """Return a saturated copy of this color."""
+        return self.copy().saturate()
 
-        r, g, b, a = self.get_saturate() * 255.
-        return "#%02X%02X%02X"%(r, g, b)
+    def invert(self) -> Self:
+        """Invert the RGB channels in place."""
+        self._c[0] = 1.0 - self._c[0]
+        self._c[1] = 1.0 - self._c[1]
+        self._c[2] = 1.0 - self._c[2]
+        return self
 
+    def get_inverse(self) -> Self:
+        """Return the inverse of this color."""
+        return self.copy().invert()
 
-    def saturate(self):
+    def mul_alpha(self) -> Self:
+        """Multiply the RGB channels by alpha in place."""
+        alpha = self._c[3]
+        self._c[0] *= alpha
+        self._c[1] *= alpha
+        self._c[2] *= alpha
+        return self
 
-        """Saturates the color, so that all components are in the range 0->1"""
+    def isclose(
+        self,
+        other: "ColorRGBA",
+        *,
+        rel_tol: float = 1e-09,
+        abs_tol: float = 0.0,
+    ) -> bool:
+        """Return whether all channels are approximately equal."""
+        from math import isclose
 
-        c = self._c
-        r, g, b, a = c
-        c[0] = min(max(r, 0.0), 1.0)
-        c[1] = min(max(g, 0.0), 1.0)
-        c[2] = min(max(b, 0.0), 1.0)
-        c[3] = min(max(a, 0.0), 1.0)
+        return all(
+            isclose(a, b, rel_tol=rel_tol, abs_tol=abs_tol)
+            for a, b in zip(self._c, other._c)
+        )
 
-    def get_saturate(self):
-
-        """Returns the saturated color as a copy."""
-
-        col_copy = self.copy()
-        c = col_copy._c
-
-        r, g, b, a = c
-        c[0] = min(max(r, 0.0), 1.0)
-        c[1] = min(max(g, 0.0), 1.0)
-        c[2] = min(max(b, 0.0), 1.0)
-        c[3] = min(max(a, 0.0), 1.0)
-
-        return col_copy
-
-    def invert(self):
-
-        """Inverts the color."""
-
-        c = self._c
-        r, g, b, a = c
-        c[0] = 1.0 - r
-        c[1] = 1.0 - g
-        c[2] = 1.0 - b
-
-    def get_inverse(self):
-
-        """Gets the inverse of the color."""
-
-        col_copy = self.copy()
-
-        c = col_copy._c
-        r, g, b, a = c
-        c[0] = 1.0 - r
-        c[1] = 1.0 - g
-        c[2] = 1.0 - b
-
-        return col_copy
-
-    def mul_alpha(self):
-
-        """Multiplies the color by its alpha component."""
-
-        c = self._c
-        a = c[3]
-        c[0] *= a
-        c[1] *= a
-        c[2] *= a
 
 Color = ColorRGBA
-
-
 
 _palette = {
     'snow' : (1.0, 0.980392156863, 0.980392156863),
@@ -995,18 +927,3 @@ _palette = {
     'darkred' : (0.545098039216, 0.0, 0.0),
     'lightgreen' : (0.564705882353, 0.933333333333, 0.564705882353),
 }
-
-
-
-if __name__ == "__main__":
-
-    c1 = Color(.5, .2, .8)
-    c2 = Color(1., 0., .2)
-    print c1
-    print repr(c1)
-    print int(c1)
-    print c1+c2
-    print Color.white()
-    print c1('rrrgggbbbaaa')
-    print Color.from_palette('magenta').rgba8
-    #palette.red += palette.blue
