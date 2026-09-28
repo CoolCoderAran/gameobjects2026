@@ -1,0 +1,62 @@
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gameobjects"
+version = "0.1.0.dev0"
+description = "Lightweight, dependency-free mathematics and geometry utilities for Python game development."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "GameObjects Contributors" }
+]
+keywords = [
+    "games",
+    "game-development",
+    "mathematics",
+    "geometry",
+    "vectors",
+    "matrices"
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed"
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/REPLACE_WITH_YOUR_USERNAME/gameobjects"
+Repository = "https://github.com/REPLACE_WITH_YOUR_USERNAME/gameobjects"
+Issues = "https://github.com/REPLACE_WITH_YOUR_USERNAME/gameobjects/issues"
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "hypothesis",
+    "mypy",
+    "pytest",
+    "ruff"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gameobjects"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
