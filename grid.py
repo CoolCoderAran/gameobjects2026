@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import Generic, TypeVar
 
-from .locals import WRAP_CLAMP, WRAP_ERROR, WRAP_NONE, WRAP_REPEAT
+
+WRAP_REPEAT = 0
+WRAP_CLAMP = 1
+WRAP_ERROR = 2
+
 NodeT = TypeVar("NodeT")
 
 
