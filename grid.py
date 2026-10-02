@@ -1,248 +1,191 @@
+"""Two-dimensional grid utilities."""
 
-from locals import WRAP_REPEAT, WRAP_CLAMP, WRAP_ERROR
-from util import saturate
+from __future__ import annotations
 
-class Grid(object):
+from collections.abc import Callable, Iterator
+from typing import Generic, TypeVar
 
-    def __init__( self,  node_factory,
-                         width,
-                         height,
-                         x_wrap = WRAP_ERROR,
-                         y_wrap = WRAP_ERROR ):
+from .locals import WRAP_CLAMP, WRAP_ERROR, WRAP_NONE, WRAP_REPEAT
+NodeT = TypeVar("NodeT")
 
-        """Create a grid object.
 
-        node_factory -- Callable that takes the x and y coordinate of the node
-        and returns a node object. x_wrap and y_wrap parameters should be
-        one of (WRAP_REPEAT, WRAP_CLAMP, WRAP_ERROR).
+class Grid(Generic[NodeT]):
+    """A two-dimensional grid of nodes."""
 
-        width -- Width of the grid.
-        height -- Height of the grid.
-        x_wrap -- How to handle out of range x coordinates
-        y_wrap -- How to handle out of range y coordinates
-
-        """
+    def __init__(
+        self,
+        node_factory: Callable[[int, int], NodeT],
+        width: int,
+        height: int,
+        x_wrap: int = WRAP_ERROR,
+        y_wrap: int = WRAP_ERROR,
+    ) -> None:
+        if width < 0 or height < 0:
+            raise ValueError("width and height must be non-negative")
 
         self.node_factory = node_factory
         self.width = width
         self.height = height
-
-        self.nodes = [ [node_factory(x, y) for x in xrange(width)] \
-                                           for y in xrange(height)]
+        self.nodes = [
+            [node_factory(x, y) for x in range(width)]
+            for y in range(height)
+        ]
 
         self._x_wrap = x_wrap
         self._y_wrap = y_wrap
+        self._wrap_functions = [
+            self._make_wrap(x_wrap, width),
+            self._make_wrap(y_wrap, height),
+        ]
 
-        self._wrap_functions = [ self._make_wrap(self._x_wrap, self.width),
-                                 self._make_wrap(self._y_wrap, self.height) ]
-
-
-    def _get_x_wrap(self):
+    @property
+    def x_wrap(self) -> int:
         return self._x_wrap
-    def _set_x_wrap(self, x_wrap):
-        self._x_wrap = x_wrap
-        self._wrap_functions[0] = self._make_wrap(x_wrap, self.width)
-    x_wrap = property(_get_x_wrap, _set_x_wrap, None, "X wrap")
 
-    def _get_y_wrap(self):
+    @x_wrap.setter
+    def x_wrap(self, value: int) -> None:
+        self._x_wrap = value
+        self._wrap_functions[0] = self._make_wrap(value, self.width)
+
+    @property
+    def y_wrap(self) -> int:
         return self._y_wrap
-    def _set_y_wrap(self, y_wrap):
-        self._y_wrap = y_wrap
-        self._wrap_functions[1] = self._make_wrap(y_wrap, self.height)
-    y_wrap = property(_get_y_wrap, _set_y_wrap, None, "Y wrap")
 
+    @y_wrap.setter
+    def y_wrap(self, value: int) -> None:
+        self._y_wrap = value
+        self._wrap_functions[1] = self._make_wrap(value, self.height)
 
-    def _make_wrap(self, wrap, edge):
-
+    def _make_wrap(self, wrap: int, edge: int) -> Callable[[int], int]:
         if wrap == WRAP_NONE:
-            def do_wrap(value):
-                return value
+            return lambda value: value
 
-        elif wrap == WRAP_REPEAT:
-            def do_wrap(value):
-                return value % edge
+        if wrap == WRAP_REPEAT:
+            if edge <= 0:
+                raise ValueError("repeat wrapping requires a non-empty grid")
+            return lambda value: value % edge
 
-        elif wrap == WRAP_CLAMP:
-            def do_wrap(value):
+        if wrap == WRAP_CLAMP:
+            def do_wrap(value: int) -> int:
+                if edge <= 0:
+                    raise IndexError("coordinate out of range")
                 if value < 0:
                     return 0
                 if value >= edge:
-                    value = edge
+                    return edge - 1
                 return value
+            return do_wrap
 
-        elif wrap == WRAP_ERROR:
-            def do_wrap(value):
+        if wrap == WRAP_ERROR:
+            def do_wrap(value: int) -> int:
                 if value < 0 or value >= edge:
                     raise IndexError("coordinate out of range")
+                return value
+            return do_wrap
 
-        else:
-            raise ValueError("Unknown wrap mode")
+        raise ValueError(f"Unknown wrap mode: {wrap!r}")
 
-        return do_wrap
-
-
-    def wrap(self, coord):
-
+    def wrap(self, coord: tuple[int, int]) -> tuple[int, int]:
         x, y = coord
-        wrap_x, wrap_y = self._wrap_functions
-        return ( wrap_x(x), wrap_y(y) )
+        return self._wrap_functions[0](x), self._wrap_functions[1](y)
 
-
-    def wrap_x(self, x):
-        """Wraps an x coordinate.
-
-        x -- X Coordinate
-
-        """
-
+    def wrap_x(self, x: int) -> int:
         return self._wrap_functions[0](x)
 
-    def wrap_y(self, y):
-        """Wraps a y coordinate.
-
-        y -- Y Coordinate.
-
-        """
-
+    def wrap_y(self, y: int) -> int:
         return self._wrap_functions[1](y)
 
-
-    def get_size(self):
-
-        """Retrieves the size of the grid as a tuple (width, height)."""
-
+    def get_size(self) -> tuple[int, int]:
         return self.width, self.height
 
-
-    def __getitem__(self, coord):
-
+    def __getitem__(
+        self,
+        coord: tuple[int | slice, int | slice],
+    ) -> NodeT | list[NodeT]:
         x, y = coord
 
         if isinstance(x, slice) or isinstance(y, slice):
-            if isinstance(x, slice):
-                x_indices = x.indices(self.width)
-            else:
-                x_indices = [x]
+            x_indices = (
+                range(*x.indices(self.width)) if isinstance(x, slice) else (x,)
+            )
+            y_indices = (
+                range(*y.indices(self.height)) if isinstance(y, slice) else (y,)
+            )
 
-            if isinstance(y, slice):
-                y_indices = y.indices(self.height)
-            else:
-                y_indices = [y]
-
+            result: list[NodeT] = []
             try:
                 wrap_x, wrap_y = self._wrap_functions
+                for y_index in y_indices:
+                    nodes_y = self.nodes[wrap_y(y_index)]
+                    for x_index in x_indices:
+                        result.append(nodes_y[wrap_x(x_index)])
+            except IndexError as exc:
+                raise IndexError("Slice out of range") from exc
+            return result
 
-                ret = []
-
-                for y_index in xrange(*y_indices):
-                    nodes_y = self.nodes[ wrap_y(y_index) ]
-
-                    for x_index in xrange(*x_indices):
-                        ret.append( nodes_y[ wrap_x(x_index) ] )
-
-            except IndexError:
-                raise IndexError("Slice out of range")
-
-            return ret
-
-
-        x, y = self.wrap(coord)
-
-        if x < 0 or y < 0:
-            raise IndexError("coordinate out of range")
-
-        try:
-            return self.nodes[y][x]
-        except IndexError:
-            raise IndexError("coordinate out of range")
-
-
-    def __iter__(self):
-
-        for row in self.nodes:
-            for node in row:
-                yield node
-
-
-    def __contains__(self, value):
-
-        for row in self.nodes:
-            if node in row:
-                return True
-
-        return False
-
-
-    def clear(self):
-
-        """Resets the grid."""
-
-        node_factory = self.node_factory
-
-        self.nodes[:] = [ [node_factory(x, y) for x in xrange(width)] \
-                                              for y in xrange(height)]
-
-
-    def get(self, coord, default=None):
-
-        """Retrieves a node from the grid.
-
-        coord -- Coordinate to retrieve
-        default -- Default value to use if coord is out of range
-
-        """
-
-        x, y = self.wrap(coord)
-
-        if x < 0 or y < 0 or x >= self.width or y >= self.height:
-            if default is not None:
-                return default
-            else:
-                raise IndexError("coordinate out of range")
-
+        x, y = self.wrap((x, y))
         return self.nodes[y][x]
 
+    def __iter__(self) -> Iterator[NodeT]:
+        for row in self.nodes:
+            yield from row
 
-    def get_nodes(self, coord, size, wrap=False):
+    def __contains__(self, value: object) -> bool:
+        return any(value in row for row in self.nodes)
 
-        width = self.width
-        height = self.height
+    def clear(self) -> None:
+        node_factory = self.node_factory
+        self.nodes[:] = [
+            [node_factory(x, y) for x in range(self.width)]
+            for y in range(self.height)
+        ]
 
-        x1, y1 = coord
-        x1 = saturate(x1, 0, width)
-        y1 = saturate(y1, 0, height)
-        w, h = size
-        x2, y2 = (x+w, y+h)
-        x = saturate(x, 0, width)
-        y = saturate(y, 0, height)
+    def get(
+        self,
+        coord: tuple[int, int],
+        default: NodeT | None = None,
+    ) -> NodeT | None:
+        try:
+            x, y = self.wrap(coord)
+            return self.nodes[y][x]
+        except IndexError:
+            return default
 
-        if x1 > x2:
-            x1, x2 = x2, x1
-        if y1 > y2:
-            y1, y2 = y2, y1
+    def get_nodes(
+        self,
+        coord: tuple[int, int],
+        size: tuple[int, int],
+        wrap: bool = False,
+    ) -> list[list[NodeT]]:
+        x, y = coord
+        width, height = size
 
-        wrap_x, wrap_y = self._wrap_functions
+        if width < 0:
+            x += width
+            width = -width
+        if height < 0:
+            y += height
+            height = -height
 
-        nodes = self.nodes
-        return [self.nodes[y_coord][x1:x2] for y_coord in xrange(y1, y2)]
+        if wrap:
+            wrap_x, wrap_y = self._wrap_functions
+            return [
+                [
+                    self.nodes[wrap_y(y_coord)][wrap_x(x_coord)]
+                    for x_coord in range(x, x + width)
+                ]
+                for y_coord in range(y, y + height)
+            ]
+
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(self.width, x + width)
+        y2 = min(self.height, y + height)
+
+        if x1 >= x2 or y1 >= y2:
+            return []
+
+        return [self.nodes[y_coord][x1:x2] for y_coord in range(y1, y2)]
 
 
-
-
-if __name__ == "__main__":
-
-    class Square(object):
-        def __init__(self, x, y):
-            self.coord = (x, y)
-        def __str__(self):
-            return str(self.coord)
-        def __repr__(self):
-            return str(self.coord)
-
-    g = Grid(Square, 100, 100, x_wrap = WRAP_REPEAT)
-
-    for square in g:
-        print str(square)
-
-    print g[10:20, 10:20]
-    print g.get_nodes((-2, 0), (5, 5))
+__all__ = ["Grid"]
